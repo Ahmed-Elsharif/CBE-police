@@ -99,7 +99,7 @@ if prompt := st.chat_input("اسأل عن القوانين أو المبادرا
                 
                 doc_context = "\n\n".join([f"[{d.metadata['source']} ص{d.metadata['page']}]: {d.page_content}" for d in docs])
                 
-                final_prompt = f"""أجب باللغة العربية الفصحى فقط وبشكل مهني.
+                final_prompt = f"""
 أنت مستشار قانوني تلتزم **فقط** بالمراجع المقدمة إليك. 
                 
                 قواعد هامة جداً:
