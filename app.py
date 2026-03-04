@@ -5,26 +5,28 @@ import re
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_ollama import OllamaLLM
+from langchain_groq import ChatGroq  # التغيير للنشر
 from langchain_core.documents import Document
 
 # --- إعدادات الصفحة ---
 st.set_page_config(page_title="المساعد الائتماني الذكي", page_icon="🤖", layout="wide")
 st.title("🤖 المساعد الائتماني الخبير (DeepSeek RAG)")
-st.subheader("تحليل القوانين والمبادرات الائتمانية بدقة عالية")
 
-# --- التحميل الذكي للمحركات ---
+# --- دالة التحميل الموحدة ---
 @st.cache_resource
-def load_embeddings():
-    # هذا السطر سيقوم بتحميل الموديل في المجلد المؤقت للموقع تلقائياً
-    model_name = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    return HuggingFaceEmbeddings(model_name=model_name)
+def load_full_system():
+    # 1. تحميل الـ Embeddings
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     
-    # تحميل قاعدة البيانات
+    # 2. إعداد قاعدة البيانات
     if os.path.exists("./chroma_db_pro"):
         vectorstore = Chroma(persist_directory="./chroma_db_pro", embedding_function=embeddings)
     else:
-        # بناء القاعدة إذا لم تكن موجودة
+        # بناء القاعدة إذا لم تكن موجودة (لأول مرة على السيرفر)
+        if not os.path.exists("my_database.csv"):
+            st.error("❌ ملف my_database.csv غير موجود!")
+            st.stop()
+            
         df = pd.read_csv("my_database.csv", encoding='utf-8-sig', sep=';', on_bad_lines='skip', engine='python')
         df.columns = df.columns.str.strip().str.lower()
         documents = []
@@ -34,53 +36,58 @@ def load_embeddings():
             documents.extend(text_splitter.split_documents([doc]))
         vectorstore = Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory="./chroma_db_pro")
     
-    # إعداد الموديل (Ollama يعمل محلياً، للنشر السحابي نحتاج API)
-    llm = OllamaLLM(model="deepseek-r1:8b", temperature=0)
+    # 3. إعداد الموديل عبر API للنشر (Groq)
+    # تأكد من إضافة GROQ_API_KEY في Streamlit Secrets
+    api_key = st.secrets.get("GROQ_API_KEY", "")
+    if not api_key:
+        st.warning("⚠️ يرجى ضبط GROQ_API_KEY في الإعدادات")
+    
+    llm = ChatGroq(
+        temperature=0, 
+        model_name="deepseek-r1-distill-llama-70b", 
+        groq_api_key=api_key
+    )
+    
     return vectorstore, llm
 
-# بدء النظام
-vectorstore, llm = load_system()
+# تشغيل النظام
+try:
+    vectorstore, llm = load_full_system()
+except Exception as e:
+    st.error(f"حدث خطأ في تحميل النظام: {e}")
+    st.stop()
 
-# --- إدارة الذاكرة (History) ---
+# --- إدارة الذاكرة وعرض الدردشة (نفس منطقك السابق) ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# عرض المحادثة السابقة
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# --- واجهة الدردشة ---
 if prompt := st.chat_input("اسألني أي شيء عن القوانين الائتمانية..."):
-    # إضافة سؤال المستخدم للذاكرة والعرض
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         with st.spinner("جاري مراجعة الملفات القانونية والتحليل..."):
-            # 1. صياغة السياق من الذاكرة (آخر رسالتين)
             history_context = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-3:-1]])
-            
-            # 2. البحث عن المراجع
             docs = vectorstore.similarity_search(prompt, k=5)
             doc_context = "\n\n".join([f"[{d.metadata['source']} ص{d.metadata['page']}]: {d.page_content}" for d in docs])
             
-            # 3. بناء الـ Prompt
             final_prompt = f"""أجب باللغة العربية الفصحى فقط. خذ سياق المحادثة والمراجع في الاعتبار.
             السياق السابق: {history_context}
             المراجع: {doc_context}
             السؤال: {prompt}
             الإجابة:"""
             
-            # 4. توليد الإجابة وتنظيفها
+            # استدعاء الموديل (تعديل بسيط ليتناسب مع ChatGroq)
             response = llm.invoke(final_prompt)
-            full_answer = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+            full_answer = re.sub(r'<think>.*?</think>', '', response.content, flags=re.DOTALL).strip()
             
-            # عرض الإجابة والمصادر
             st.markdown(full_answer)
             sources = set([f"{d.metadata['source']} (ص{d.metadata['page']})" for d in docs])
             st.info(f"📍 المصادر: " + " | ".join(sources))
             
-    # حفظ إجابة البوت في الذاكرة
     st.session_state.messages.append({"role": "assistant", "content": full_answer})
