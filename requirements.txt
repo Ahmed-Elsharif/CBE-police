@@ -1,0 +1,10 @@
+streamlit
+pandas
+langchain
+langchain-community
+langchain-huggingface
+langchain-ollama
+chromadb
+sentence-transformers
+torch
+transformers
