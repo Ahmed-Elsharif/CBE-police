@@ -8,3 +8,4 @@ chromadb
 sentence-transformers
 torch
 transformers
+langchain-groq
