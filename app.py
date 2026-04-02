@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(page_title="المساعد الائتماني الذكي", page_icon="🏦", layout="wide")
-st.title("🤖 المساعد الائتماني الذكي")
+st.title("Created by Ahmed Mostafa🤖 المساعد الائتماني الذكي")
 st.markdown("---")
 
 # --- 2. دالة التحميل المحسنة (Memory Optimized) ---
